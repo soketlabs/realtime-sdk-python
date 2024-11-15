@@ -1,4 +1,6 @@
+import json
 import asyncio
+
 from .event_handler import RealtimeEventHandler
 from .api import RealtimeAPI
 from .conversation import RealtimeConversation
@@ -97,7 +99,7 @@ class RealtimeClient(RealtimeEventHandler):
         Handles item creation events.
         """
         item, delta = self.conversation.process_event(event)
-        logger.info(f"item::::: {item}")
+        # logger.info(f"item::::: {item}")
         self.dispatch("conversation.item.appended", {"item": item})
         if item and item["status"] == "completed":
             self.dispatch("conversation.item.completed", {"item": item})
@@ -109,7 +111,7 @@ class RealtimeClient(RealtimeEventHandler):
         item, delta = self.conversation.process_event(event, *args)
         self.dispatch("conversation.updated", {"item": item, "delta": delta})
 
-    async def _handle_item_done(self, event):
+    def _handle_item_done(self, event):
         """
         Handles completion of items, including tool calls.
         """
@@ -117,9 +119,9 @@ class RealtimeClient(RealtimeEventHandler):
         if item and item["status"] == "completed":
             self.dispatch("conversation.item.completed", {"item": item})
         if item and "tool" in item["formatted"]:
-            await self._call_tool(item["formatted"]["tool"])
+            self._call_tool(item["formatted"]["tool"])
 
-    async def _call_tool(self, tool):
+    def _call_tool(self, tool):
         """
         Calls a tool with the provided arguments.
         """
@@ -129,7 +131,7 @@ class RealtimeClient(RealtimeEventHandler):
             if not tool_config:
                 raise ValueError(f'Tool "{tool["name"]}" has not been added')
 
-            result = await tool_config["handler"](args)
+            result = tool_config["handler"](args)
             self.realtime.send("conversation.item.create", {
                 "item": {
                     "type": "function_call_output",
