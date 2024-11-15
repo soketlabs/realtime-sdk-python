@@ -5,7 +5,7 @@ from websockets.exceptions import ConnectionClosed
 from typing import Optional, Dict, Any, Union
 from .event_handler import RealtimeEventHandler
 from .utils import RealtimeUtils
-
+from loguru import logger
 
 class RealtimeAPI(RealtimeEventHandler):
     """
@@ -17,17 +17,18 @@ class RealtimeAPI(RealtimeEventHandler):
         Create a new RealtimeAPI instance
         """
         super().__init__()
-        self.default_url = "wss://api.openai.com/v1/realtime"
+        self.default_url = "wss://api.soket.ai/s2s"
         self.url = url or self.default_url
         self.api_key = api_key
         self.debug = debug
+        self.connection_created = False
         self.ws = None
 
     def is_connected(self) -> bool:
         """
         Checks whether the WebSocket is connected.
         """
-        return self.ws is not None and not self.ws.closed
+        return self.ws is not None and self.connection_created
 
     def log(self, *args):
         """
@@ -51,17 +52,20 @@ class RealtimeAPI(RealtimeEventHandler):
             raise RuntimeError("Already connected")
 
         try:
-            async with connect(
-                f"{self.url}?model={model}",
-                extra_headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "OpenAI-Beta": "realtime=v1"
-                }
-            ) as websocket:
-                self.ws = websocket
-                self.log(f"Connected to {self.url}")
-                asyncio.create_task(self.listen())
-                return True
+            self.ws = await connect(
+            f"{self.url}?model={model}",
+            extra_headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "OpenAI-Beta": "realtime=v1"
+            }
+        )
+            self.log(f"Connected to {self.url}")
+            self.connection_created = True
+            asyncio.create_task(self.listen())
+            return True
+
+        except websockets.exceptions.ConnectionClosed:
+            self.connection_created = False 
         except Exception as e:
             self.log(f"Failed to connect: {e}")
             raise RuntimeError(f"Could not connect to {self.url}") from e
@@ -73,6 +77,7 @@ class RealtimeAPI(RealtimeEventHandler):
         if self.ws:
             await self.ws.close()
             self.ws = None
+            self.connection_created = False
             self.log("Disconnected from the server")
 
     async def listen(self):
@@ -82,6 +87,7 @@ class RealtimeAPI(RealtimeEventHandler):
         try:
             async for message in self.ws:
                 data = json.loads(message)
+                logger.info(message)
                 self.receive(data["type"], data)
         except ConnectionClosed as e:
             self.log(f"WebSocket closed: {e}")
@@ -95,7 +101,7 @@ class RealtimeAPI(RealtimeEventHandler):
         self.dispatch(f"server.{event_name}", event)
         self.dispatch("server.*", event)
 
-    def send(self, event_name: str, data: Optional[Dict[str, Any]] = None):
+    async def send(self, event_name: str, data: Optional[Dict[str, Any]] = None):
         """
         Sends an event to the WebSocket server.
         """
@@ -115,4 +121,9 @@ class RealtimeAPI(RealtimeEventHandler):
         self.dispatch(f"client.{event_name}", event)
         self.dispatch("client.*", event)
         self.log("Sent:", event_name, event)
-        asyncio.create_task(self.ws.send(json.dumps(event)))
+        try:
+            await self.ws.send(json.dumps(event))
+        except Exception as e:
+            self.log(f"Failed to send event: {e}")
+            raise
+

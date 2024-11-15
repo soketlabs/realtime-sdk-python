@@ -3,7 +3,7 @@ from .event_handler import RealtimeEventHandler
 from .api import RealtimeAPI
 from .conversation import RealtimeConversation
 from .utils import RealtimeUtils
-
+from loguru import logger
 
 class RealtimeClient(RealtimeEventHandler):
     """
@@ -19,7 +19,9 @@ class RealtimeClient(RealtimeEventHandler):
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "input_audio_transcription": None,
-            "turn_detection": None,
+            "turn_detection": {
+                
+            },
             "tools": [],
             "tool_choice": "auto",
             "temperature": 0.8,
@@ -95,6 +97,7 @@ class RealtimeClient(RealtimeEventHandler):
         Handles item creation events.
         """
         item, delta = self.conversation.process_event(event)
+        logger.info(f"item::::: {item}")
         self.dispatch("conversation.item.appended", {"item": item})
         if item and item["status"] == "completed":
             self.dispatch("conversation.item.completed", {"item": item})
@@ -150,7 +153,8 @@ class RealtimeClient(RealtimeEventHandler):
         if self.is_connected():
             raise RuntimeError("Already connected, use disconnect() first.")
         await self.realtime.connect()
-        self.update_session()
+        await self.update_session()
+        
         return True
 
     async def disconnect(self):
@@ -179,16 +183,16 @@ class RealtimeClient(RealtimeEventHandler):
             await asyncio.sleep(0.1)
         return True
 
-    def update_session(self, **kwargs):
+    async def update_session(self, **kwargs):
         """
         Updates session configuration with the provided parameters.
         """
         self.session_config.update(kwargs)
         if self.realtime.is_connected():
-            self.realtime.send("session.update", {"session": self.session_config})
+            await self.realtime.send("session.update", {"session": self.session_config})
         return True
 
-    def send_user_message_content(self, content=None):
+    async def send_user_message_content(self, content=None):
         """
         Sends a user message and generates a response.
         """
@@ -196,25 +200,27 @@ class RealtimeClient(RealtimeEventHandler):
         for c in content:
             if c["type"] == "input_audio" and isinstance(c["audio"], (bytes, bytearray)):
                 c["audio"] = RealtimeUtils.array_buffer_to_base64(c["audio"])
-        self.realtime.send("conversation.item.create", {
+        
+        await self.realtime.send("conversation.item.create", {
             "item": {
                 "type": "message",
                 "role": "user",
                 "content": content,
             }
         })
-        self.create_response()
+        logger.debug("conversation item create sent")
+        await self.create_response()
         return True
 
-    def create_response(self):
+    async def create_response(self):
         """
         Forces a model response generation.
         """
         if not self.get_turn_detection_type() and self.input_audio_buffer:
-            self.realtime.send("input_audio_buffer.commit")
+            await self.realtime.send("input_audio_buffer.commit")
             self.conversation.queue_input_audio(self.input_audio_buffer)
             self.input_audio_buffer = bytearray()
-        self.realtime.send("response.create")
+        await self.realtime.send("response.create")
         return True
 
     def get_turn_detection_type(self):

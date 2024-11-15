@@ -1,6 +1,6 @@
 import asyncio
 from typing import Callable, Any, Dict, List, Optional
-
+from loguru import logger
 
 class RealtimeEventHandler:
     """
@@ -91,11 +91,14 @@ class RealtimeEventHandler:
         """
         Executes all events in the order they were added
         """
+        logger.info("reahced1")
         handlers = list(self.event_handlers.get(event_name, []))
+        logger.info("reahced2")
         for handler in handlers:
             handler(event)
 
         next_handlers = list(self.next_event_handlers.get(event_name, []))
+        logger.info("reahced3")
         for next_handler in next_handlers:
             next_handler(event)
 
