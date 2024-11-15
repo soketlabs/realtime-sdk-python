@@ -15,8 +15,8 @@ with open(os.path.join(_PACKAGE_REAL_PATH, '__init__.py')) as f:
     content = f.read()
 # regex: '__version__', whitespace?, '=', whitespace, quote, version, quote
 # we put parens around the version so that it becomes elem 1 of the match
-expr = re.compile(r"""^__version__\W+=\W+['"]([0-9\.]*)['"]""", re.MULTILINE)
-repo_version = expr.findall(content)[0]
+#expr = re.compile(r"""^__version__\W+=\W+['"]([0-9\.]*)['"]""", re.MULTILINE)
+#repo_version = expr.findall(content)[0]
 
 # Use repo README for PyPi description
 with open('README.md', 'r', encoding='utf-8') as fh:
@@ -56,7 +56,7 @@ extra_deps = {}
 
 setup(
     name=_PACKAGE_NAME,
-    version=repo_version,
+    version="0.0.1",
     author='SoketLabs',
     author_email='reachout@soket.ai',
     description='Realtime',
