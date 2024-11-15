@@ -1,6 +1,6 @@
 import asyncio
 import json
-from websockets import connect
+from websockets import connect, exceptions
 from websockets.exceptions import ConnectionClosed
 from typing import Optional, Dict, Any, Union
 from .event_handler import RealtimeEventHandler
@@ -42,7 +42,7 @@ class RealtimeAPI(RealtimeEventHandler):
                     log_messages.append(json.dumps(arg, indent=2))
                 else:
                     log_messages.append(str(arg))
-            print(" ".join(log_messages))
+            logger.info(" ".join(log_messages))
 
     async def connect(self, model: str = "gpt-4o-realtime-preview-2024-10-01"):
         """
@@ -64,7 +64,7 @@ class RealtimeAPI(RealtimeEventHandler):
             asyncio.create_task(self.listen())
             return True
 
-        except websockets.exceptions.ConnectionClosed:
+        except exceptions.ConnectionClosed:
             self.connection_created = False 
         except Exception as e:
             self.log(f"Failed to connect: {e}")
@@ -87,7 +87,6 @@ class RealtimeAPI(RealtimeEventHandler):
         try:
             async for message in self.ws:
                 data = json.loads(message)
-                logger.info(message)
                 self.receive(data["type"], data)
         except ConnectionClosed as e:
             self.log(f"WebSocket closed: {e}")
@@ -97,7 +96,7 @@ class RealtimeAPI(RealtimeEventHandler):
         """
         Handles received WebSocket events.
         """
-        self.log("Received:", event_name, event)
+        # self.log("Received:", event_name, event)
         self.dispatch(f"server.{event_name}", event)
         self.dispatch("server.*", event)
 
@@ -120,7 +119,7 @@ class RealtimeAPI(RealtimeEventHandler):
         }
         self.dispatch(f"client.{event_name}", event)
         self.dispatch("client.*", event)
-        self.log("Sent:", event_name, event)
+        # self.log("Sent:", event_name, event)
         try:
             await self.ws.send(json.dumps(event))
         except Exception as e:

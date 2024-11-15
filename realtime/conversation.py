@@ -85,7 +85,6 @@ class RealtimeConversation:
         return audio[:end_index]
 
     def _process_item_created(self, event):
-        logger.info(event)
         item = event['item']
         new_item = copy.deepcopy(item)
         if new_item['id'] not in self.item_lookup:
@@ -133,8 +132,6 @@ class RealtimeConversation:
         elif new_item['type'] == 'function_call_output':
             new_item['status'] = 'completed'
             new_item['formatted']['output'] = new_item['output']
-
-        logger.debug(new_item)
 
         return new_item, None
 
@@ -249,7 +246,7 @@ class RealtimeConversation:
             raise ValueError(f'response.audio.delta: Item "{item_id}" not found')
         # Decode base64 string to bytes
         delta_bytes = base64.b64decode(delta)
-        append_values = np.frombuffer(delta_bytes, dtype=np.int16)
+        append_values = np.frombuffer(delta_bytes, dtype=np.int8)
         item['formatted']['audio'] = np.concatenate((item['formatted']['audio'], append_values))
         return item, {'audio': append_values}
 
