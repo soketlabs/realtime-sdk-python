@@ -5,7 +5,7 @@ from websockets.exceptions import ConnectionClosed
 from typing import Optional, Dict, Any, Union
 from .event_handler import RealtimeEventHandler
 from .utils import RealtimeUtils
-
+from loguru import logger
 
 class RealtimeAPI(RealtimeEventHandler):
     """
@@ -87,6 +87,7 @@ class RealtimeAPI(RealtimeEventHandler):
         try:
             async for message in self.ws:
                 data = json.loads(message)
+                logger.info(message)
                 self.receive(data["type"], data)
         except ConnectionClosed as e:
             self.log(f"WebSocket closed: {e}")
@@ -100,7 +101,7 @@ class RealtimeAPI(RealtimeEventHandler):
         self.dispatch(f"server.{event_name}", event)
         self.dispatch("server.*", event)
 
-    def send(self, event_name: str, data: Optional[Dict[str, Any]] = None):
+    async def send(self, event_name: str, data: Optional[Dict[str, Any]] = None):
         """
         Sends an event to the WebSocket server.
         """
@@ -120,4 +121,9 @@ class RealtimeAPI(RealtimeEventHandler):
         self.dispatch(f"client.{event_name}", event)
         self.dispatch("client.*", event)
         self.log("Sent:", event_name, event)
-        asyncio.create_task(self.ws.send(json.dumps(event)))
+        try:
+            await self.ws.send(json.dumps(event))
+        except Exception as e:
+            self.log(f"Failed to send event: {e}")
+            raise
+

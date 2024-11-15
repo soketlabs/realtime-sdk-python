@@ -25,8 +25,8 @@ async def main():
 
 
     # Register the event handlers
-    #client.on("conversation.updated", on_conversation_updated)
-    #client.on("conversation.item.completed", on_conversation_item_completed)
+    client.on("conversation.updated", on_conversation_updated)
+    client.on("conversation.item.completed", on_conversation_item_completed)
 
     try:
         # Connect to the Realtime API
@@ -44,7 +44,7 @@ async def main():
                 "text": "Hello, how can I help you?"
             }
         ]
-        #client.send_user_message_content(content=message_content)
+        await client.send_user_message_content(content=message_content)
         print("Message sent.")
 
         # Keep the connection alive to process events
