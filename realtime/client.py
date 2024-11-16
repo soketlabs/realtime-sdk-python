@@ -1,11 +1,13 @@
 import json
 import asyncio
+import base64
+from loguru import logger
 
 from .event_handler import RealtimeEventHandler
 from .api import RealtimeAPI
 from .conversation import RealtimeConversation
 from .utils import RealtimeUtils
-from loguru import logger
+
 
 class RealtimeClient(RealtimeEventHandler):
     """
@@ -21,9 +23,7 @@ class RealtimeClient(RealtimeEventHandler):
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "input_audio_transcription": None,
-            "turn_detection": {
-                
-            },
+            "turn_detection": {},
             "tools": [],
             "tool_choice": "auto",
             "temperature": 0.8,
@@ -74,6 +74,10 @@ class RealtimeClient(RealtimeEventHandler):
         self.realtime.on("server.response.function_call_arguments.delta", self._handle_item_updated)
         self.realtime.on("server.response.output_item.done", self._handle_item_done)
 
+        # Added missing event handlers for speech start and end
+        self.realtime.on("server.input_audio_buffer.speech_started", self._handle_speech_started)
+        self.realtime.on("server.input_audio_buffer.speech_stopped", self._handle_speech_stopped)
+
         return True
 
     def _log_event(self, source):
@@ -99,7 +103,6 @@ class RealtimeClient(RealtimeEventHandler):
         Handles item creation events.
         """
         item, delta = self.conversation.process_event(event)
-        # logger.info(f"item::::: {item}")
         self.dispatch("conversation.item.appended", {"item": item})
         if item and item["status"] == "completed":
             self.dispatch("conversation.item.completed", {"item": item})
@@ -148,6 +151,23 @@ class RealtimeClient(RealtimeEventHandler):
                 }
             })
 
+    # Added missing event handlers
+
+    def _handle_speech_started(self, event):
+        """
+        Handles speech started events.
+        """
+        item, delta = self.conversation.process_event(event)
+        self.dispatch('conversation.interrupted', {})
+
+    def _handle_speech_stopped(self, event):
+        """
+        Handles speech stopped events.
+        """
+        item, delta = self.conversation.process_event(event, self.input_audio_buffer)
+
+    # Existing methods continue...
+
     async def connect(self):
         """
         Connects to the Realtime WebSocket API.
@@ -156,7 +176,7 @@ class RealtimeClient(RealtimeEventHandler):
             raise RuntimeError("Already connected, use disconnect() first.")
         await self.realtime.connect()
         await self.update_session()
-        
+
         return True
 
     async def disconnect(self):
@@ -173,7 +193,7 @@ class RealtimeClient(RealtimeEventHandler):
         Checks whether the realtime WebSocket connection is active.
         """
         return self.realtime.is_connected()
-    
+        
     async def wait_for_session_created(self):
         """
         Waits for the 'session.created' event to be triggered.
@@ -202,7 +222,7 @@ class RealtimeClient(RealtimeEventHandler):
         for c in content:
             if c["type"] == "input_audio" and isinstance(c["audio"], (bytes, bytearray)):
                 c["audio"] = RealtimeUtils.array_buffer_to_base64(c["audio"])
-        
+
         await self.realtime.send("conversation.item.create", {
             "item": {
                 "type": "message",
@@ -210,7 +230,6 @@ class RealtimeClient(RealtimeEventHandler):
                 "content": content,
             }
         })
-        logger.debug("conversation item create sent")
         await self.create_response()
         return True
 
@@ -230,5 +249,88 @@ class RealtimeClient(RealtimeEventHandler):
         Gets the active turn detection mode.
         """
         return self.session_config.get("turn_detection", {}).get("type", None)
+        
+    def add_tool(self, definition, handler):
+        if not definition.get('name'):
+            raise Exception('Missing tool name in definition')
+        name = definition.get('name')
+        if name in self.tools:
+            raise Exception(f'Tool "{name}" already added. Please use .remove_tool("{name}") before trying to add again.')
+        if not callable(handler):
+            raise Exception(f'Tool "{name}" handler must be a function')
+        self.tools[name] = {'definition': definition, 'handler': handler}
+        self.update_session()
+        return self.tools[name]
 
-    # Additional methods like `addTool`, `removeTool`, `waitForNextItem`, etc., can be implemented here
+    def remove_tool(self, name):
+        if name not in self.tools:
+            raise Exception(f'Tool "{name}" does not exist, cannot be removed.')
+        del self.tools[name]
+        return True
+        
+    def delete_item(self, item_id):
+        asyncio.create_task(self.realtime.send('conversation.item.delete', {'item_id': item_id}))
+        return True
+        
+    async def append_input_audio(self, array_buffer):
+        if len(array_buffer) > 0:
+            await self.realtime.send('input_audio_buffer.append', {
+                'audio': base64.b64encode(array_buffer).decode('utf-8')
+            })
+            self.input_audio_buffer += array_buffer
+        return True
+
+    # Added missing functions below
+
+    def reset(self):
+        """
+        Resets the client instance: disconnects and clears active config.
+        """
+        asyncio.create_task(self.disconnect())
+        self.clear_event_handlers()
+        self.realtime.clear_event_handlers()
+        self._reset_config()
+        self._add_api_event_handlers()
+        return True
+
+    def cancel_response(self, item_id=None, sample_count=0):
+        """
+        Cancels the ongoing server generation and truncates ongoing generation, if applicable.
+        """
+        if not item_id:
+            asyncio.create_task(self.realtime.send('response.cancel'))
+            return {'item': None}
+        else:
+            item = self.conversation.get_item(item_id)
+            if not item:
+                raise Exception(f'Could not find item "{item_id}"')
+            if item['type'] != 'message':
+                raise Exception('Can only cancel_response messages with type "message"')
+            elif item['role'] != 'assistant':
+                raise Exception('Can only cancel_response messages with role "assistant"')
+            asyncio.create_task(self.realtime.send('response.cancel'))
+            audio_index = next((i for i, c in enumerate(item['content']) if c['type'] == 'audio'), -1)
+            if audio_index == -1:
+                raise Exception('Could not find audio on item to cancel')
+            asyncio.create_task(self.realtime.send('conversation.item.truncate', {
+                'item_id': item_id,
+                'content_index': audio_index,
+                'audio_end_ms': int((sample_count / self.conversation.default_frequency) * 1000)
+            }))
+            return {'item': item}
+
+    async def wait_for_next_item(self):
+        """
+        Utility for waiting for the next 'conversation.item.appended' event.
+        """
+        event = await self.wait_for_next('conversation.item.appended')
+        item = event.get('item') if event else None
+        return {'item': item}
+
+    async def wait_for_next_completed_item(self):
+        """
+        Utility for waiting for the next 'conversation.item.completed' event.
+        """
+        event = await self.wait_for_next('conversation.item.completed')
+        item = event.get('item') if event else None
+        return {'item': item}

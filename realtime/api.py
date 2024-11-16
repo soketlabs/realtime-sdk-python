@@ -96,7 +96,7 @@ class RealtimeAPI(RealtimeEventHandler):
         """
         Handles received WebSocket events.
         """
-        # self.log("Received:", event_name, event)
+        logger.debug(event_name)
         self.dispatch(f"server.{event_name}", event)
         self.dispatch("server.*", event)
 
