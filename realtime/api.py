@@ -17,7 +17,7 @@ class RealtimeAPI(RealtimeEventHandler):
         Create a new RealtimeAPI instance
         """
         super().__init__()
-        self.default_url = "wss://api.soket.ai/s2s"
+        self.default_url = "wss://api.soket.ai/v1/realtime"
         self.url = url or self.default_url
         self.api_key = api_key
         self.debug = debug
@@ -54,7 +54,7 @@ class RealtimeAPI(RealtimeEventHandler):
         try:
             self.ws = await connect(
             f"{self.url}?model={model}",
-            extra_headers={
+            additional_headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "OpenAI-Beta": "realtime=v1"
             }
