@@ -259,10 +259,7 @@ class RealtimeClient(RealtimeEventHandler):
         if not callable(handler):
             raise Exception(f'Tool "{name}" handler must be a function')
         self.tools[name] = {'definition': definition, 'handler': handler}
-        t = []
-        for k, v in self.tools.items():
-            t.append(v)
-        self.update_session({"tools": t})
+        self.update_session(tools=[definition])
         return self.tools[name]
 
     def remove_tool(self, name):
